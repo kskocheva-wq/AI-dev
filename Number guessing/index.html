@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f2e8">
+  <title>Lucky Number</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f2e8;
+      --ink: #173c35;
+      --muted: #66756b;
+      --coral: #e65d43;
+      --pink: #c2185b;
+      --mint: #c08fbd;
+      --yellow: #dc5bea;
+      --line: #173c35;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px 18px;
+      color: var(--ink);
+      background-color: var(--paper);
+      background-image: radial-gradient(#173c3512 0.8px, transparent 0.8px);
+      background-size: 12px 12px;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(100%, 520px);
+      animation: arrive 500ms ease-out both;
+    }
+
+    .masthead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .masthead span:last-child {
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    .masthead strong {
+      color: var(--ink);
+      font-size: 0.82rem;
+    }
+
+    .game {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(26px, 7vw, 46px);
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #fffdf6;
+      box-shadow: 7px 7px 0 var(--ink);
+    }
+
+    .game::after {
+      position: absolute;
+      top: -54px;
+      right: -43px;
+      width: 142px;
+      aspect-ratio: 1;
+      border: 2px solid var(--line);
+      border-radius: 50%;
+      background: var(--yellow);
+      content: "";
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--coral);
+      font-size: 0.75rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 360px;
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2.7rem, 12vw, 4.5rem);
+      font-weight: 700;
+      letter-spacing: 0;
+      line-height: 0.98;
+    }
+
+    .instructions {
+      margin: 18px 0 26px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.55;
+    }
+
+    form {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    input, button {
+      min-height: 54px;
+      border: 2px solid var(--line);
+      border-radius: 5px;
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 800;
+    }
+
+    input {
+      width: 100%;
+      min-width: 0;
+      padding: 0 16px;
+      color: var(--ink);
+      background: var(--mint);
+      outline-offset: 3px;
+    }
+
+    input::placeholder {
+      color: #66756b;
+      font-weight: 500;
+    }
+
+    button {
+      flex: 0 0 116px;
+      padding: 0 18px;
+      color: #fffdf6;
+      background: var(--pink);
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+
+    button:hover {
+      background: #a3154d;
+      box-shadow: 3px 3px 0 var(--ink);
+      transform: translate(-2px, -2px);
+    }
+
+    button:active {
+      box-shadow: none;
+      transform: translate(1px, 1px);
+    }
+
+    .new-game {
+      width: 100%;
+      margin-top: 12px;
+      background: #2468a2;
+    }
+
+    .new-game:hover {
+      background: #1a4f7e;
+    }
+
+    .new-game[hidden] {
+      display: none;
+    }
+
+    .message {
+      min-height: 30px;
+      margin: 18px 0 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .message[data-state="win"] { color: #26734c; }
+    .message[data-state="miss"] { color: var(--coral); }
+    .message[data-state="invalid"] { color: var(--muted); font-family: inherit; font-size: 0.95rem; }
+
+    @keyframes arrive {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 390px) {
+      .game { padding: 26px 20px; }
+      button { flex-basis: 94px; padding-inline: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <span>Lucky Number</span>
+      <span>Round <strong id="round-count">1</strong> · Attempts <strong id="attempt-count">0</strong></span>
+    </header>
+
+    <section class="game" aria-labelledby="title">
+      <p class="eyebrow">A tiny game of chance</p>
+      <h1 id="title">Pick a number.</h1>
+      <p class="instructions">I’m thinking of a number from 1 to 100. Can you guess it?</p>
+
+      <form id="guess-form">
+        <input
+          id="guess"
+          name="guess"
+          type="number"
+          min="1"
+          max="100"
+          step="1"
+          inputmode="numeric"
+          placeholder="1 to 100"
+          aria-label="Your guess, from 1 to 100"
+          required
+        >
+        <button type="submit">Guess</button>
+      </form>
+
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+      <button id="new-game" class="new-game" type="button" hidden>Start a new game</button>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#guess-form");
+    const input = document.querySelector("#guess");
+    const submitButton = form.querySelector("button");
+    const newGameButton = document.querySelector("#new-game");
+    const message = document.querySelector("#message");
+    const roundCount = document.querySelector("#round-count");
+    const attemptCount = document.querySelector("#attempt-count");
+    let round = 1;
+    let attempts = 0;
+    let answer = randomNumber();
+
+    function randomNumber() {
+      return Math.floor(Math.random() * 100) + 1;
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const guess = Number(input.value);
+
+      if (!Number.isInteger(guess) || guess < 1 || guess > 100) {
+        message.textContent = "Enter a whole number from 1 to 100.";
+        message.dataset.state = "invalid";
+        input.focus();
+        return;
+      }
+
+      attempts += 1;
+      attemptCount.textContent = attempts;
+
+      if (guess === answer) {
+        message.textContent = "GG";
+        message.dataset.state = "win";
+        input.disabled = true;
+        submitButton.disabled = true;
+        newGameButton.hidden = false;
+      } else if (guess < answer) {
+        message.textContent = "Too low! Try again";
+        message.dataset.state = "miss";
+      } else {
+        message.textContent = "Too high! Try again";
+        message.dataset.state = "miss";
+      }
+
+      input.value = "";
+      if (!input.disabled) input.focus();
+    });
+
+    newGameButton.addEventListener("click", () => {
+      round += 1;
+      roundCount.textContent = round;
+      attempts = 0;
+      attemptCount.textContent = attempts;
+      answer = randomNumber();
+      input.disabled = false;
+      submitButton.disabled = false;
+      newGameButton.hidden = true;
+      message.textContent = "";
+      delete message.dataset.state;
+      input.focus();
+    });
+  </script>
+</body>
+</html>
