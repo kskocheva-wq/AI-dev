@@ -316,6 +316,7 @@
       playerShips: [],
       computerShips: [],
       playerShots: new Set(),
+      enemyHits: new Set(),
       computerShots: new Set(),
       selectedShipId: null,
       orientation: "horizontal",
@@ -571,6 +572,7 @@
         state.computerShips = [];
       }
       state.playerShots.clear();
+      state.enemyHits.clear();
       state.computerShots.clear();
       state.targetHits = [];
       state.lastProcessedSequence = 0;
@@ -841,6 +843,7 @@
     function applyOnlineShotResult(shot) {
       state.lastAppliedSequence = shot.sequence;
       state.playerShots.add(shot.index);
+      if (shot.hit) state.enemyHits.add(shot.index);
       if (shot.hit && shot.sunkShipName) {
         const sunkShip = state.computerShips.find(ship =>
           ship.name === shot.sunkShipName && !shipIsSunk(ship)
@@ -1035,9 +1038,14 @@
         if ((isPlayer || revealEnemyFleet) && board[index] && state.phase !== "start") cell.classList.add("ship");
         if (shots.has(index)) {
           cell.classList.remove("water");
-          cell.classList.add(board[index] ? "hit" : "miss");
+          const wasHit = isPlayer
+            ? Boolean(board[index])
+            : state.opponent === "person"
+              ? state.enemyHits.has(index)
+              : Boolean(board[index]);
+          cell.classList.add(wasHit ? "hit" : "miss");
           if (board[index] && shipIsSunk(board[index])) cell.classList.add("sunk");
-          cell.setAttribute("aria-label", `${coord(index)}, ${board[index] ? "hit" : "miss"}`);
+          cell.setAttribute("aria-label", `${coord(index)}, ${wasHit ? "hit" : "miss"}`);
         }
         if (preview && preview.includes(index)) {
           cell.classList.remove("water");
@@ -1239,6 +1247,7 @@
       state.playerShips = [];
       state.computerShips = [];
       state.playerShots.clear();
+      state.enemyHits.clear();
       state.computerShots.clear();
       state.targetHits = [];
       state.selectedShipId = null;
