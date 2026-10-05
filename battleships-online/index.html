@@ -864,6 +864,9 @@
       }
       state.lastProcessedSequence = shot.sequence;
       const fleetSunk = remainingShips(state.playerShips) === 0;
+      // A hit grants the next shot to the same shooter; a miss passes the turn
+      // to the defender who just resolved this shot.
+      const nextTurn = result.hit ? shot.by : state.playerUid;
       await firebaseRequest(`rooms/${state.roomCode}/public`, "PATCH", {
         lastShot: {
           by: shot.by,
@@ -872,7 +875,7 @@
           hit: result.hit,
           sunkShipName: result.sunk ? result.ship.name : null
         },
-        turn: shot.by,
+        turn: nextTurn,
         status: fleetSunk ? "finished" : "battle",
         winnerUid: fleetSunk ? shot.by : null
       });
@@ -884,11 +887,16 @@
         finishGame("Defeat — your fleet has been sunk", `Your final ship was hit at ${coord(shot.index)}.`);
         return;
       }
-      state.phase = "player";
-      document.getElementById("statusTitle").textContent = "Your turn — fire at will";
-      document.getElementById("statusDetail").textContent = "Choose an untested square on the opposing waters.";
-      document.getElementById("turnLabel").textContent = "Your turn";
-      document.getElementById("statusDot").classList.remove("thinking");
+      const myTurn = nextTurn === state.playerUid;
+      state.phase = myTurn ? "player" : "opponent";
+      document.getElementById("statusTitle").textContent = myTurn
+        ? "Your turn — fire at will"
+        : "Opponent gets another shot";
+      document.getElementById("statusDetail").textContent = myTurn
+        ? "Your opponent missed. Choose an untested square on their waters."
+        : "Your opponent hit your ship and keeps the turn.";
+      document.getElementById("turnLabel").textContent = myTurn ? "Your turn" : "Their turn";
+      document.getElementById("statusDot").classList.toggle("thinking", !myTurn);
       renderAll();
     }
 
