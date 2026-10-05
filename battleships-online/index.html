@@ -137,6 +137,12 @@
       min-height: 42px; margin-top: 13px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px;
       color: #adc4c9; background: rgba(0,0,0,.1); font-size: 11px; line-height: 1.5;
     }
+    .message.loading { display: flex; align-items: center; gap: 9px; }
+    .message-spinner {
+      width: 14px; height: 14px; flex: 0 0 14px; border: 2px solid rgba(89,224,193,.24);
+      border-top-color: var(--accent); border-radius: 50%; animation: message-spin .7s linear infinite;
+    }
+    @keyframes message-spin { to { transform: rotate(360deg); } }
     .message strong { color: var(--ink); }
     .message.good { border-color: rgba(89,224,193,.25); color: #a1ead8; }
     .message.bad { border-color: rgba(255,115,121,.25); color: #ffafb2; }
@@ -759,7 +765,7 @@
       document.getElementById("turnLabel").textContent = "Player 1";
       document.getElementById("playerBoardHint").textContent = "Your fleet is deployed.";
       document.getElementById("enemyBoardHint").textContent = "Select an untested square to fire.";
-      battleMessage.textContent = "Battle stations. Choose your first target.";
+      setBattleMessage("Battle stations. Choose your first target.");
       renderAll();
     }
 
@@ -857,14 +863,15 @@
           for (let segment = 0; segment < sunkShip.size; segment++) sunkShip.hits.add(segment);
         }
       }
-      battleMessage.textContent = shot.hit
+      setBattleMessage(shot.hit
         ? `HIT at ${coord(shot.index)}${shot.sunkShipName ? ` — enemy ${shot.sunkShipName} sunk!` : ""}`
-        : `MISS at ${coord(shot.index)}.`;
+        : `MISS at ${coord(shot.index)}.`);
       renderAll();
     }
 
     async function resolveOnlineIncomingShot(shot) {
       if (!state.playerShips.length) return;
+      setBattleMessage(`Resolving shot at ${coord(shot.index)}…`, true);
       const result = resolveShot(state.playerShips, state.computerShots, shot.index);
       if (!result.valid) {
         state.lastProcessedSequence = shot.sequence;
@@ -888,9 +895,9 @@
         status: fleetSunk ? "finished" : "battle",
         winnerUid: fleetSunk ? shot.by : null
       });
-      battleMessage.textContent = result.hit
+      setBattleMessage(result.hit
         ? `Opponent fired at ${coord(shot.index)}: HIT${result.sunk ? ` — your ${result.ship.name} was sunk` : ""}.`
-        : `Opponent fired at ${coord(shot.index)}: MISS.`;
+        : `Opponent fired at ${coord(shot.index)}: MISS.`);
       if (fleetSunk) {
         state.phase = "lost";
         finishGame("Defeat — your fleet has been sunk", `Your final ship was hit at ${coord(shot.index)}.`);
@@ -910,6 +917,8 @@
     }
 
     async function sendOnlineShot(index) {
+      setBattleMessage(`Fired at ${coord(index)}. Waiting for the result…`, true);
+      renderAll();
       const room = await firebaseRequest(`rooms/${state.roomCode}/public`);
       if (!room || room.status !== "battle" || room.turn !== state.playerUid) return;
       const sequence = (room.pendingShot?.sequence || 0) + 1;
@@ -923,7 +932,6 @@
       document.getElementById("statusTitle").textContent = "Shot away";
       document.getElementById("statusDetail").textContent = "Waiting for the other captain to report the result.";
       document.getElementById("turnLabel").textContent = "Waiting";
-      battleMessage.textContent = `Fired at ${coord(index)}. Waiting for the result…`;
       renderAll();
     }
 
@@ -1101,6 +1109,19 @@
       messageBox.className = `message${kind ? ` ${kind}` : ""}`;
     }
 
+    function setBattleMessage(text, loading = false) {
+      battleMessage.replaceChildren();
+      battleMessage.classList.toggle("loading", loading);
+      battleMessage.setAttribute("aria-busy", String(loading));
+      if (loading) {
+        const spinner = document.createElement("span");
+        spinner.className = "message-spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        battleMessage.append(spinner);
+      }
+      battleMessage.append(document.createTextNode(text));
+    }
+
     // Resolves a shot, records it once, and reports the first ship sunk by this hit.
     function resolveShot(targetShips, shotSet, index) {
       if (shotSet.has(index)) return { valid: false };
@@ -1164,6 +1185,7 @@
       if (state.phase !== "player" || state.playerShots.has(index)) return;
       if (state.opponent === "person") {
         state.phase = "opponent";
+        setBattleMessage(`Fired at ${coord(index)}. Waiting for the result…`, true);
         renderAll();
         sendOnlineShot(index).catch(error => {
           document.getElementById("statusDetail").textContent = error.message;
@@ -1180,13 +1202,14 @@
         return;
       }
       if (result.hit) {
-        battleMessage.textContent = result.sunk
+        setBattleMessage(result.sunk
           ? `HIT at ${coord(index)} — ${result.ship.name} sunk!`
-          : `HIT at ${coord(index)} — enemy ${result.ship.name} damaged.`;
+          : `HIT at ${coord(index)} — enemy ${result.ship.name} damaged.`);
       } else {
-        battleMessage.textContent = `MISS at ${coord(index)} — your shell found open water.`;
+        setBattleMessage(`MISS at ${coord(index)} — your shell found open water.`);
       }
       state.phase = "computer";
+      setBattleMessage("Shot away. The computer is taking its turn…", true);
       document.getElementById("statusTitle").textContent = "Computer is taking aim";
       document.getElementById("statusDetail").textContent = "The opposing fleet is plotting its next shot.";
       document.getElementById("turnLabel").textContent = "Player 2";
@@ -1212,7 +1235,7 @@
       const report = result.hit
         ? `Computer fired at ${coord(index)}: HIT${result.sunk ? ` — your ${result.ship.name} was sunk` : ""}.`
         : `Computer fired at ${coord(index)}: MISS.`;
-      battleMessage.textContent = report;
+      setBattleMessage(report);
       document.getElementById("statusTitle").textContent = "Your turn — fire at will";
       document.getElementById("statusDetail").textContent = "Choose an untested square on the opposing waters.";
       document.getElementById("turnLabel").textContent = "Player 1";
@@ -1230,7 +1253,7 @@
       document.getElementById("enemyBoardHint").textContent = state.opponent === "person"
         ? "Final board — the opponent's fleet remains hidden."
         : "Final board — surviving enemy ships revealed.";
-      battleMessage.textContent = detail;
+      setBattleMessage(detail);
       if (state.pollTimer) {
         window.clearInterval(state.pollTimer);
         state.pollTimer = null;
