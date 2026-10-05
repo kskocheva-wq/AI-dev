@@ -89,7 +89,7 @@
     .cell.hit::before { content: "×"; font-size: 23px; font-weight: 800; line-height: 1; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
     .cell.miss { border-color: rgba(152,214,229,.26); background: #0b2231; }
     .cell.miss::before { width: 6px; height: 6px; border-radius: 50%; background: #a7d3dc; box-shadow: 0 0 8px rgba(167,211,220,.5); content: ""; }
-    .cell.sunk { border-color: #ff6c74; background: linear-gradient(145deg, #7d303d, #512532); }
+    .cell.sunk { border-color: #7d2934; background: linear-gradient(145deg, #57212c, #351721); }
     .cell.preview-valid { border-color: var(--accent); background: rgba(89,224,193,.55); box-shadow: inset 0 0 0 1px rgba(89,224,193,.2), 0 0 10px rgba(89,224,193,.15); }
     .cell.preview-invalid { border-color: var(--danger); background: rgba(255,115,121,.5); }
     .grid.interactive .cell:not(.hit):not(.miss) { cursor: crosshair; }
@@ -317,6 +317,7 @@
       computerShips: [],
       playerShots: new Set(),
       enemyHits: new Set(),
+      enemySunkHits: new Set(),
       computerShots: new Set(),
       selectedShipId: null,
       orientation: "horizontal",
@@ -573,6 +574,7 @@
       }
       state.playerShots.clear();
       state.enemyHits.clear();
+      state.enemySunkHits.clear();
       state.computerShots.clear();
       state.targetHits = [];
       state.lastProcessedSequence = 0;
@@ -844,6 +846,9 @@
       state.lastAppliedSequence = shot.sequence;
       state.playerShots.add(shot.index);
       if (shot.hit) state.enemyHits.add(shot.index);
+      if (shot.sunkPositions) {
+        for (const position of shot.sunkPositions) state.enemySunkHits.add(position);
+      }
       if (shot.hit && shot.sunkShipName) {
         const sunkShip = state.computerShips.find(ship =>
           ship.name === shot.sunkShipName && !shipIsSunk(ship)
@@ -876,7 +881,8 @@
           index: shot.index,
           sequence: shot.sequence,
           hit: result.hit,
-          sunkShipName: result.sunk ? result.ship.name : null
+          sunkShipName: result.sunk ? result.ship.name : null,
+          sunkPositions: result.sunk ? result.ship.positions : null
         },
         turn: nextTurn,
         status: fleetSunk ? "finished" : "battle",
@@ -1044,7 +1050,10 @@
               ? state.enemyHits.has(index)
               : Boolean(board[index]);
           cell.classList.add(wasHit ? "hit" : "miss");
-          if (board[index] && shipIsSunk(board[index])) cell.classList.add("sunk");
+          if ((board[index] && shipIsSunk(board[index])) ||
+              (!isPlayer && state.opponent === "person" && state.enemySunkHits.has(index))) {
+            cell.classList.add("sunk");
+          }
           cell.setAttribute("aria-label", `${coord(index)}, ${wasHit ? "hit" : "miss"}`);
         }
         if (preview && preview.includes(index)) {
@@ -1248,6 +1257,7 @@
       state.computerShips = [];
       state.playerShots.clear();
       state.enemyHits.clear();
+      state.enemySunkHits.clear();
       state.computerShots.clear();
       state.targetHits = [];
       state.selectedShipId = null;
