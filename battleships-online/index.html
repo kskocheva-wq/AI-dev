@@ -157,12 +157,12 @@
     .message.bad { border-color: rgba(255,115,121,.25); color: #ffafb2; }
     .hidden { display: none !important; }
     .start-overlay {
-      position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; padding: 20px;
+      position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 20px;
       background: rgba(4,14,22,.8); backdrop-filter: blur(8px);
     }
     .start-card {
       width: min(460px, 100%); padding: 34px; border: 1px solid rgba(148,210,210,.2); border-radius: 22px;
-      background: linear-gradient(145deg, #123044, #0b202f); box-shadow: 0 24px 90px rgba(0,0,0,.42); text-align: center;
+      margin: auto 0; background: linear-gradient(145deg, #123044, #0b202f); box-shadow: 0 24px 90px rgba(0,0,0,.42); text-align: center;
     }
     .start-emblem { display: grid; width: 66px; height: 66px; margin: 0 auto 19px; place-items: center; border: 1px solid rgba(89,224,193,.38); border-radius: 20px; color: var(--accent); background: rgba(89,224,193,.09); font-size: 31px; }
     .start-card h2 { margin: 0 0 10px; font-size: 29px; letter-spacing: -.04em; }
@@ -173,6 +173,12 @@
     .start-card .person-options input { width: 100%; min-height: 43px; border: 1px solid var(--line); border-radius: 9px; padding: 0 12px; color: var(--ink); background: rgba(0,0,0,.2); text-align: center; font: inherit; letter-spacing: .16em; text-transform: uppercase; }
     .start-card .person-options .controls { margin-top: 0; }
     .start-card .start-error { min-height: 16px; margin-top: 10px; color: #ffafb2; font-size: 11px; }
+    .score-panel { margin-top: 20px; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,.14); text-align: left; }
+    .score-panel-heading { margin-bottom: 10px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+    .score-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .score-grid > div { color: var(--muted); font-size: 9px; text-align: center; }
+    .score-grid strong { display: block; margin-top: 4px; color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; }
+    .score-status { margin-top: 9px; color: var(--muted); font-size: 10px; text-align: center; }
     .footer-note { margin-top: 15px; color: #607b85; font-size: 10px; text-align: center; }
     @media (max-width: 760px) {
       body { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
@@ -347,6 +353,16 @@
         <input id="roomCodeInput" type="text" maxlength="6" autocomplete="one-time-code" placeholder="6-character code" aria-label="Invitation code">
         <div class="controls"><button class="btn" id="joinRoomButton" type="button">Join game</button></div>
       </div>
+      <section class="score-panel" aria-label="Your scores" aria-live="polite">
+        <div class="score-panel-heading">Your scores</div>
+        <div class="score-grid">
+          <div>Wins<strong id="scoreWins">—</strong></div>
+          <div>Losses<strong id="scoreLosses">—</strong></div>
+          <div>Current streak<strong id="scoreCurrentStreak">—</strong></div>
+          <div>Best streak<strong id="scoreBestStreak">—</strong></div>
+        </div>
+        <div class="score-status" id="scoreStatus">Loading scores…</div>
+      </section>
       <div class="start-error" id="startError" aria-live="polite"></div>
       <p class="footer-note">Online games use Firebase and check for moves once per second.</p>
     </div>
@@ -365,6 +381,7 @@
     const BOARD_SIZE = 10;
     const LETTERS = "ABCDEFGHIJ";
     const ROOM_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+    const AUTH_STORAGE_KEY = "broadside-anonymous-auth-v1";
     // Paste the public web config from your Firebase project here before hosting.
     const FIREBASE_CONFIG = {
       apiKey: "AIzaSyBnugF2Tn5GnmjvQwoEmOyCo-9moC6iYvI",
@@ -382,6 +399,7 @@
       roomCode: null,
       idToken: null,
       refreshToken: null,
+      gameResultRecorded: false,
       pollTimer: null,
       lastProcessedSequence: 0,
       lastAppliedSequence: 0,
@@ -407,6 +425,10 @@
     const messageBox = document.getElementById("message");
     const battleMessage = document.getElementById("battleMessage");
     const startError = document.getElementById("startError");
+    const scoreStatus = document.getElementById("scoreStatus");
+    let authPromise = null;
+    let scoreLoadPromise = null;
+    let playerScore = null;
 
     function databaseUrl(path) {
       const baseUrl = FIREBASE_CONFIG.databaseURL.replace(/\/+$/, "");
@@ -417,13 +439,20 @@
     }
 
     async function firebaseRequest(path, method = "GET", data, authenticated = true) {
-      const url = databaseUrl(path);
-      if (!authenticated) url.searchParams.delete("auth");
-      const response = await fetch(url, {
-        method,
-        headers: data === undefined ? {} : { "Content-Type": "application/json" },
-        body: data === undefined ? undefined : JSON.stringify(data)
-      });
+      const request = () => {
+        const url = databaseUrl(path);
+        if (!authenticated) url.searchParams.delete("auth");
+        return fetch(url, {
+          method,
+          headers: data === undefined ? {} : { "Content-Type": "application/json" },
+          body: data === undefined ? undefined : JSON.stringify(data)
+        });
+      };
+      let response = await request();
+      if (response.status === 401 && authenticated && state.refreshToken) {
+        await refreshAuthSession();
+        response = await request();
+      }
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         const reason = body && body.error ? body.error : `HTTP ${response.status}`;
@@ -433,10 +462,57 @@
     }
 
     async function signInAnonymously() {
+      if (state.playerUid && state.idToken) return;
+      if (authPromise) return authPromise;
+      authPromise = signInOrRestoreAnonymousSession();
+      try {
+        await authPromise;
+      } finally {
+        authPromise = null;
+      }
+    }
+
+    function saveAuthSession(uid, idToken, refreshToken) {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ uid, refreshToken }));
+      state.playerUid = uid;
+      state.idToken = idToken;
+      state.refreshToken = refreshToken;
+    }
+
+    async function refreshAuthSession(refreshToken = state.refreshToken) {
+      if (!refreshToken) throw new Error("No Firebase refresh token is available. Sign in again to load scores.");
+      const response = await fetch(
+        `https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }).toString()
+        }
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "Firebase session refresh failed.");
+      saveAuthSession(result.user_id, result.id_token, result.refresh_token);
+    }
+
+    async function signInOrRestoreAnonymousSession() {
       const hasPlaceholder = FIREBASE_CONFIG.apiKey.startsWith("PASTE_") ||
         FIREBASE_CONFIG.databaseURL.includes("YOUR_FIREBASE_PROJECT");
       if (hasPlaceholder) {
         throw new Error("Add your Firebase Web API key and Realtime Database URL in FIREBASE_CONFIG first.");
+      }
+      const storedSession = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (storedSession) {
+        let session;
+        try {
+          session = JSON.parse(storedSession);
+        } catch {
+          throw new Error("The saved Firebase session is invalid. Clear this site's storage to create a new score profile.");
+        }
+        if (!session.uid || !session.refreshToken) {
+          throw new Error("The saved Firebase session is incomplete. Clear this site's storage to create a new score profile.");
+        }
+        await refreshAuthSession(session.refreshToken);
+        return;
       }
       const response = await fetch(
         `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(FIREBASE_CONFIG.apiKey)}`,
@@ -448,9 +524,65 @@
       );
       const result = await response.json();
       if (!response.ok) throw new Error(result.error?.message || "Anonymous Firebase sign-in failed.");
-      state.playerUid = result.localId;
-      state.idToken = result.idToken;
-      state.refreshToken = result.refreshToken;
+      saveAuthSession(result.localId, result.idToken, result.refreshToken);
+    }
+
+    function renderPlayerScore(score) {
+      document.getElementById("scoreWins").textContent = score.wins;
+      document.getElementById("scoreLosses").textContent = score.losses;
+      document.getElementById("scoreCurrentStreak").textContent = score.currentStreak;
+      document.getElementById("scoreBestStreak").textContent = score.bestStreak;
+    }
+
+    function readPlayerScore(data) {
+      const score = data || { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0 };
+      for (const field of ["wins", "losses", "currentStreak", "bestStreak"]) {
+        if (!Number.isSafeInteger(score[field]) || score[field] < 0) {
+          throw new Error(`Your Firebase score has an invalid ${field} value.`);
+        }
+      }
+      return {
+        wins: score.wins,
+        losses: score.losses,
+        currentStreak: score.currentStreak,
+        bestStreak: score.bestStreak
+      };
+    }
+
+    async function loadPlayerScore() {
+      if (playerScore) return playerScore;
+      if (scoreLoadPromise) return scoreLoadPromise;
+      scoreLoadPromise = (async () => {
+        await signInAnonymously();
+        const data = await firebaseRequest(`scores/${state.playerUid}`);
+        playerScore = readPlayerScore(data);
+        renderPlayerScore(playerScore);
+        scoreStatus.textContent = "Saved to this browser's Firebase account.";
+        return playerScore;
+      })();
+      try {
+        return await scoreLoadPromise;
+      } catch (error) {
+        scoreLoadPromise = null;
+        throw error;
+      } finally {
+        if (playerScore) scoreLoadPromise = null;
+      }
+    }
+
+    async function recordGameResult(won) {
+      const previousScore = await loadPlayerScore();
+      const currentStreak = won ? previousScore.currentStreak + 1 : 0;
+      const updatedScore = {
+        wins: previousScore.wins + (won ? 1 : 0),
+        losses: previousScore.losses + (won ? 0 : 1),
+        currentStreak,
+        bestStreak: Math.max(previousScore.bestStreak, currentStreak)
+      };
+      await firebaseRequest(`scores/${state.playerUid}`, "PATCH", updatedScore);
+      playerScore = updatedScore;
+      renderPlayerScore(playerScore);
+      scoreStatus.textContent = "Score saved.";
     }
 
     function generateRoomCode() {
@@ -683,6 +815,7 @@
     function beginGame(opponent = "computer") {
       state.phase = "setup";
       state.opponent = opponent;
+      state.gameResultRecorded = false;
       state.playerShips = [];
       state.computerShips = [];
       if (opponent === "person") {
@@ -1386,6 +1519,13 @@
         ? "Final board — the opponent's fleet remains hidden."
         : "Final board — surviving enemy ships revealed.";
       setBattleMessage(detail);
+      if (!state.gameResultRecorded) {
+        state.gameResultRecorded = true;
+        recordGameResult(state.phase === "won").catch(error => {
+          scoreStatus.textContent = `Could not save score: ${error.message}`;
+          document.getElementById("statusDetail").textContent = `${detail} Score could not be saved: ${error.message}`;
+        });
+      }
       if (state.opponent !== "person" && state.pollTimer) {
         window.clearInterval(state.pollTimer);
         state.pollTimer = null;
@@ -1397,12 +1537,9 @@
       state.phase = "start";
       state.opponent = "computer";
       state.role = null;
-      state.playerUid = null;
       state.hostUid = null;
       state.opponentUid = null;
       state.roomCode = null;
-      state.idToken = null;
-      state.refreshToken = null;
       state.playerReady = false;
       if (state.pollTimer) {
         window.clearInterval(state.pollTimer);
@@ -1461,9 +1598,6 @@
         await joinOnlineRoom(document.getElementById("roomCodeInput").value);
       } catch (error) {
         startError.textContent = error.message;
-        state.playerUid = null;
-        state.idToken = null;
-        state.refreshToken = null;
       } finally {
         button.disabled = false;
       }
@@ -1506,6 +1640,9 @@
 
     setupGridLabels();
     renderAll();
+    loadPlayerScore().catch(error => {
+      scoreStatus.textContent = `Could not load scores: ${error.message}`;
+    });
   </script>
 </body>
 </html>
