@@ -456,7 +456,7 @@
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         const reason = body && body.error ? body.error : `HTTP ${response.status}`;
-        throw new Error(`Firebase request failed: ${reason}`);
+        throw new Error(`Firebase ${method} ${path} failed: ${reason}`);
       }
       return body;
     }
@@ -654,25 +654,24 @@
         throw new Error("Enter a valid six-character room code.");
       }
       await signInAnonymously();
-      const meta = await firebaseRequest(`rooms/${code}/meta`);
-      if (!meta || !meta.hostUid) throw new Error("That room code was not found.");
       const room = await firebaseRequest(`rooms/${code}/public`);
+      if (!room || !room.hostUid) throw new Error("That room code was not found.");
       if (roomHasExpired(room)) {
         await firebaseRequest(`rooms/${code}`, "PUT", newRoomData(state.playerUid));
         startHostingRoom(code);
         return;
       }
-      if (meta.guestUid) throw new Error("That room already has two players.");
-      if (!room || room.status !== "setup") throw new Error("That game is no longer waiting for a player.");
-      await firebaseRequest(`rooms/${code}/meta`, "PATCH", {
-        hostUid: meta.hostUid,
-        guestUid: state.playerUid
-      });
+      if (room.status !== "setup") throw new Error("That game is no longer waiting for a player.");
+      if (room.guestUid && room.guestUid !== state.playerUid) {
+        throw new Error("That room already has two players.");
+      }
+      if (!room.guestUid) {
+        await firebaseRequest(`rooms/${code}/public`, "PATCH", { guestUid: state.playerUid });
+      }
       state.roomCode = code;
-      state.hostUid = meta.hostUid;
-      state.opponentUid = meta.hostUid;
+      state.hostUid = room.hostUid;
+      state.opponentUid = room.hostUid;
       state.role = "guest";
-      await firebaseRequest(`rooms/${code}/public`, "PATCH", { guestUid: state.playerUid });
       beginGame("person");
       showInviteCode();
       startRoomPolling();
